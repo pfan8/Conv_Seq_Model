@@ -87,16 +87,19 @@ class CaptioningSolver(object):
         # Metrics and F1
         max_len = len(labels[0])
         _, _, generated_labels = self.model.build_sampler(max_len)
-        metric_add_result = self.model.labels + generated_labels
-        equal_to_0 = tf.equal(metric_add_result, 0)
-        equal_to_2 = tf.equal(metric_add_result, 2)
-        true_negative = tf.reduce_sum(tf.cast(equal_to_0, tf.int32))
-        true_positive = tf.reduce_sum(tf.cast(equal_to_2, tf.int32))
+
+        # metric_add_result = self.model.labels + generated_labels
+        # equal_to_0 = tf.equal(metric_add_result, 0)
+        # equal_to_2 = tf.equal(metric_add_result, 2)
+        # true_negative = tf.reduce_sum(tf.cast(equal_to_0, tf.int32))
+        # true_positive = tf.reduce_sum(tf.cast(equal_to_2, tf.int32))
         metric_minus_result = self.model.labels - generated_labels
-        equal_to_1 = tf.equal(metric_minus_result, 1)
-        equal_to_n1 = tf.equal(metric_minus_result, -1)
-        false_negative = tf.reduce_sum(tf.cast(equal_to_1, tf.int32))
-        false_positive = tf.reduce_sum(tf.cast(equal_to_n1, tf.int32))
+        equal_to_0 = tf.equal(metric_minus_result, 0)
+        accurancy = tf.reduce_sum(tf.cast(equal_to_0, tf.float32))
+        # equal_to_1 = tf.equal(metric_minus_result, 1)
+        # equal_to_n1 = tf.equal(metric_minus_result, -1)
+        # false_negative = tf.reduce_sum(tf.cast(equal_to_1, tf.int32))
+        # false_positive = tf.reduce_sum(tf.cast(equal_to_n1, tf.int32))
         
         # summary op
         tf.summary.scalar('batch_loss', loss)
@@ -130,7 +133,7 @@ class CaptioningSolver(object):
             curr_loss = 0
             prev_acc = -1
             curr_acc = 0
-            max_F1 = 0.0
+            max_acc = 0.0
             start_t = time.time()
 
             for e in range(self.n_epochs):
@@ -138,29 +141,30 @@ class CaptioningSolver(object):
                 labels = labels[rand_idxs]
                 idxs = idxs[rand_idxs]
                 # Metrics
-                TP = 0
-                FP = 0
-                TN = 0
-                FN = 0
+                # TP = 0
+                # FP = 0
+                # TN = 0
+                # FN = 0
 
                 for i in range(n_iters_per_epoch):
                     labels_batch = labels[i * self.batch_size:(i + 1) * self.batch_size]
                     idxs_batch = idxs[i * self.batch_size:(i + 1) * self.batch_size]
                     features_batch = features[idxs_batch]
                     feed_dict = {self.model.features: features_batch, self.model.labels: labels_batch}
-                    _, l = sess.run([train_op, loss], feed_dict)
-                    tp,fp,tn,fn = sess.run([true_positive, false_positive,\
-                                            true_negative, false_negative], feed_dict)
+                    _, l, acc = sess.run([train_op, loss, accurancy], feed_dict)
+                    # tp,fp,tn,fn = sess.run([true_positive, false_positive,\
+                    #                         true_negative, false_negative], feed_dict)
                     # _, l, debug_var = sess.run([train_op, loss, debug_var], feed_dict)
                     # print "feature_batch:%s" % features_batch[0]
                     # print "labels_batch:%s" % labels_batch[0]
                     # print "slengths_batch:%s" % slengths_batch[0]
                     # print "debug_var:{},{},{}".format(debug_var[0].shape,debug_var[1],debug_var[2])
                     curr_loss += l
-                    TP += tp
-                    FP += fp
-                    TN += tn
-                    FN += fn
+                    curr_acc += acc
+                    # TP += tp
+                    # FP += fp
+                    # TN += tn
+                    # FN += fn
 
                     # write summary for tensorboard visualization
                     if i % 10 == 0:
@@ -179,30 +183,34 @@ class CaptioningSolver(object):
                         decoded = gen_caps
                         print "Result: %s\n" % decoded[0]
 
+                curr_loss /= float(n_examples * max_len)
                 print "Previous epoch loss: ", prev_loss
                 print "Current epoch loss: ", curr_loss
-                assert (TP+FP+TN+FN) == n_examples * max_len
-                curr_acc = (TP + TN) / float(n_examples * max_len)
+                # assert (TP+FP+TN+FN) == n_examples * max_len
+                # curr_acc = (TP + TN) / float(n_examples * max_len)
+                curr_acc /= float(n_examples * max_len)
                 print "Previous epoch acc: ", prev_acc
                 print "Current epoch acc: ", curr_acc
-                print "True Positive: ", TP
-                print "False Positive: ", FP
-                print "True Negative: ", TN
-                print "False Negative: ", FN
-                recall = TP / float(TP + FN )
-                print "Recall:", recall
-                F1 = curr_acc * recall * 2 / (curr_acc + recall)
-                print "F1:", F1
+                # print "True Positive: ", TP
+                # print "False Positive: ", FP
+                # print "True Negative: ", TN
+                # print "False Negative: ", FN
+                # recall = TP / float(TP + FN )
+                # print "Recall:", recall
+                # F1 = curr_acc * recall * 2 / (curr_acc + recall)
+                # print "F1:", F1
                 print "Elapsed time: ", time.time() - start_t
                 prev_loss = curr_loss
                 prev_acc = curr_acc
                 curr_loss = 0
 
                 # save model's parameters
-                if max_F1 < F1:
-                    max_F1= F1
+                if max_acc < curr_acc:
+                    max_acc= curr_acc
                     saver.save(sess, os.path.join(self.model_path, 'model'), global_step=e + 1)
-                    print "model of %.2f F1 saved." % (max_F1)
+                    print "model of %.2f acc saved." % (max_acc)
+
+                curr_acc = 0
 
     def test(self, data, split='train', attention_visualization=False, save_sampled_labels=True):
         '''
