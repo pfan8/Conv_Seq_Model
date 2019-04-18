@@ -86,7 +86,7 @@ class CaptioningSolver(object):
         tf.get_variable_scope().reuse_variables()
         # Metrics and F1
         max_len = len(labels[0])
-        _, _, generated_labels = self.model.build_sampler(max_len)
+        generated_labels = self.model.build_sampler(max_len)
 
         # metric_add_result = self.model.labels + generated_labels
         # equal_to_0 = tf.equal(metric_add_result, 0)
@@ -102,6 +102,7 @@ class CaptioningSolver(object):
         # false_positive = tf.reduce_sum(tf.cast(equal_to_n1, tf.int32))
         
         # summary op
+        tf.summary.scalar('accuracy',accurancy)
         tf.summary.scalar('batch_loss', loss)
         for var in tf.trainable_variables():
             tf.summary.histogram(var.op.name, var)
@@ -109,6 +110,8 @@ class CaptioningSolver(object):
             tf.summary.histogram(var.op.name + '/gradient', grad)
 
         summary_op = tf.summary.merge_all()
+        
+
 
         print "The number of epoch: %d" % self.n_epochs
         print "Data size: %d" % n_examples
@@ -133,6 +136,8 @@ class CaptioningSolver(object):
             curr_loss = 0
             prev_acc = -1
             curr_acc = 0
+            prev_test_acc = -1
+            curr_test_acc = 0
             max_acc = 0.0
             start_t = time.time()
 
@@ -182,15 +187,19 @@ class CaptioningSolver(object):
                         # decoded = decode_labels(gen_caps, self.model.idx_to_word)
                         decoded = gen_caps
                         print "Result: %s\n" % decoded[0]
-
-                curr_loss /= float(n_examples * max_len)
-                print "Previous epoch loss: ", prev_loss
-                print "Current epoch loss: ", curr_loss
+                
+                print "Previous epoch train loss: ", prev_loss
+                print "Current epoch train loss: ", curr_loss
                 # assert (TP+FP+TN+FN) == n_examples * max_len
                 # curr_acc = (TP + TN) / float(n_examples * max_len)
                 curr_acc /= float(n_examples * max_len)
-                print "Previous epoch acc: ", prev_acc
-                print "Current epoch acc: ", curr_acc
+                print "Previous epoch train acc: ", prev_acc
+                print "Current epoch train acc: ", curr_acc
+                feed_dict_test = {self.model.features: self.val_data['features'], self.model.labels: self.val_data['labels']}
+                curr_test_acc = sess.run(accurancy, feed_dict_test)
+                curr_test_acc /= float(n_examples * max_len)
+                print "Previous epoch test acc: ", prev_test_acc
+                print "Current epoch test acc: ", curr_test_acc
                 # print "True Positive: ", TP
                 # print "False Positive: ", FP
                 # print "True Negative: ", TN
@@ -202,6 +211,7 @@ class CaptioningSolver(object):
                 print "Elapsed time: ", time.time() - start_t
                 prev_loss = curr_loss
                 prev_acc = curr_acc
+                prev_test_acc = curr_test_acc
                 curr_loss = 0
 
                 # save model's parameters
@@ -211,6 +221,7 @@ class CaptioningSolver(object):
                     print "model of %.2f acc saved." % (max_acc)
 
                 curr_acc = 0
+                curr_test_acc = 0
 
     def test(self, data, split='train', attention_visualization=False, save_sampled_labels=True):
         '''
@@ -231,7 +242,7 @@ class CaptioningSolver(object):
         n_examples = data['labels'].shape[0]
         n_iters_per_epoch = int(np.ceil(float(n_examples) / self.batch_size))
         # build a graph to sample labels
-        alphas, betas, sampled_labels = self.model.build_sampler(max_len=7)  # (N, max_len, L), (N, max_len)
+        sampled_labels = self.model.build_sampler(max_len=7)  # (N, max_len, L), (N, max_len)
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
@@ -289,7 +300,7 @@ class CaptioningSolver(object):
         features = data['features']
 
         # build a graph to sample labels
-        alphas, betas, sampled_labels = self.model.build_sampler(max_len=20)  # (N, max_len, L), (N, max_len)
+        sampled_labels = self.model.build_sampler(max_len=20)  # (N, max_len, L), (N, max_len)
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True

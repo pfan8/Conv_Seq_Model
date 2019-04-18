@@ -141,16 +141,21 @@ class CaptionGenerator(object):
             else:
                 output = layers[0]
 
-            # Use w,b transfor output to suitable dim in order to match Decoder
-            w_h = tf.get_variable('w_h', [self.M * len(kernels), self.H], initializer=self.weight_initializer)
-            b_h = tf.get_variable('b_h', [self.H], initializer=self.const_initializer)
-            h = tf.nn.tanh(tf.matmul(output, w_h) + b_h) # (N, H)
+            # # Use w,b transfor output to suitable dim in order to match Decoder
+            # w_h = tf.get_variable('w_h', [self.M * len(kernels), self.H], initializer=self.weight_initializer)
+            # b_h = tf.get_variable('b_h', [self.H], initializer=self.const_initializer)
+            # h = tf.nn.tanh(tf.matmul(output, w_h) + b_h) # (N, H)
 
-            w_c = tf.get_variable('w_c', [self.M * len(kernels), self.H], initializer=self.weight_initializer)
-            b_c = tf.get_variable('b_c', [self.H], initializer=self.const_initializer)
-            c = tf.nn.tanh(tf.matmul(output, w_c) + b_c) # (N, H)
+            # w_c = tf.get_variable('w_c', [self.M * len(kernels), self.H], initializer=self.weight_initializer)
+            # b_c = tf.get_variable('b_c', [self.H], initializer=self.const_initializer)
+            # c = tf.nn.tanh(tf.matmul(output, w_c) + b_c) # (N, H)
 
-        return c, h
+            # Direct output logits
+            w_out = tf.get_variable('w_out', [self.M * len(kernels), self.V], initializer=self.weight_initializer)
+            b_out = tf.get_variable('b_out', [self.V], initializer=self.const_initializer)
+            logits = tf.nn.tanh(tf.matmul(output, w_out) + b_out) # (N, V)
+
+        return logits
 
     def _get_encoder_layer(self, input_data, num_layers,reuse=False):
         # Encoder embedding
@@ -198,44 +203,46 @@ class CaptionGenerator(object):
         labels = self.labels
         batch_size = tf.shape(features)[0]
 
-        labels_in = labels[:, :self.T]
-        labels_out = labels[:, 1:]
+        # labels_in = labels[:, :self.T]
+        labels_out = labels
 
         # batch normalize feature vectors
         # features = self._batch_norm(features, mode='train', name='seq_features')
 
-        c, h = self._get_cnn_layer(tf.cast(features, dtype=tf.int32))
+        # c, h = self._get_cnn_layer(tf.cast(features, dtype=tf.int32))
         # _,(c, h) = self._get_encoder_layer(tf.cast(features, dtype=tf.int32), 3) # (N, H)
-        x = self._word_embedding(inputs=labels_in) # (N, T, M)
-        features_proj = self._project_features(features=features)
+        # x = self._word_embedding(inputs=labels_in) # (N, T, M)
+        # features_proj = self._project_features(features=features)
 
         loss = 0.0
-        alpha_list = []
-        lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=self.H)
+        # alpha_list = []
+        # lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=self.H)
 
-        for t in range(self.T):
-            context, alpha = self._attention_layer(features, features_proj, h, reuse=(t != 0))
-            alpha_list.append(alpha)
+        # for t in range(self.T):
+            # context, alpha = self._attention_layer(features, features_proj, h, reuse=(t != 0))
+            # alpha_list.append(alpha)
 
-            if self.selector:
-                context, beta = self._selector(context, h, reuse=(t != 0))
+            # if self.selector:
+                # context, beta = self._selector(context, h, reuse=(t != 0))
 
-            with tf.variable_scope('lstm', reuse=(t != 0)):
-                _, (c, h) = lstm_cell(inputs=tf.concat([x[:, t, :], context], 1), state=[c, h])
+            # with tf.variable_scope('lstm', reuse=(t != 0)):
+                # _, (c, h) = lstm_cell(inputs=tf.concat([x[:, t, :], context], 1), state=[c, h])
 
-            logits = self._decode_lstm(x[:, t, :], h, context, dropout=self.dropout, reuse=(t != 0))
-            # Calculate loss
-            x1 = tf.nn.softmax(logits)
-            one_hot_result = tf.one_hot(labels_out[:, t], self.V)
-            weight = tf.constant([1.0,1.0])
-            softmax_results = tf.reduce_mean(-tf.reduce_sum(one_hot_result * weight * tf.log(x1), 1))
-            loss += softmax_results
-        self.debug_var = (x1,softmax_results,loss)
-        if self.alpha_c > 0:
-            alphas = tf.transpose(tf.stack(alpha_list), (1, 0, 2))  # (N, T, D)
-            alphas_all = tf.reduce_sum(alpha_list, 1)  # (N, D)
-            alpha_reg = self.alpha_c * tf.reduce_sum((16. / 196 - alphas_all) ** 2)
-            loss += alpha_reg
+            # logits = self._decode_lstm(x[:, t, :], h, context, dropout=self.dropout, reuse=(t != 0))
+            # # Calculate loss
+        logits = self._get_cnn_layer(tf.cast(features, dtype=tf.int32))
+        x1 = tf.nn.softmax(logits)
+        one_hot_result = tf.one_hot(labels_out[:, 0], self.V) # (N, V)
+
+            # weight = tf.constant([1.0,1.0])
+        softmax_results = tf.reduce_mean(-tf.reduce_sum(one_hot_result * tf.log(x1), 1))
+        loss += softmax_results
+        # self.debug_var = (x1,softmax_results,loss)
+        # if self.alpha_c > 0:
+        #     alphas = tf.transpose(tf.stack(alpha_list), (1, 0, 2))  # (N, T, D)
+        #     alphas_all = tf.reduce_sum(alpha_list, 1)  # (N, D)
+        #     alpha_reg = self.alpha_c * tf.reduce_sum((16. / 196 - alphas_all) ** 2)
+        #     loss += alpha_reg
 
         # return loss / tf.to_float(batch_size), self.debug_var
         return loss / tf.to_float(batch_size)
@@ -245,37 +252,38 @@ class CaptionGenerator(object):
 
         # batch normalize feature vectors
         # features = self._batch_norm(features, mode='test', name='seq_features')
-        c, h = self._get_cnn_layer(tf.cast(features, dtype=tf.int32))
+        # c, h = self._get_cnn_layer(tf.cast(features, dtype=tf.int32))
         # _,(c, h) = self._get_encoder_layer(tf.cast(features, dtype=tf.int32), 3, reuse=False) # (N, H)
-        features_proj = self._project_features(features=features)
+        # features_proj = self._project_features(features=features)
 
         sampled_word_list = []
         alpha_list = []
         beta_list = []
-        lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=self.H)
+        # lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=self.H)
 
         for t in range(max_len):
-            if t == 0:
-                # x = self._word_embedding(inputs=tf.fill([tf.shape(features)[0]], self._start))
-                x = self._word_embedding(inputs=tf.fill([tf.shape(features)[0]], 0))
-            else:
-                x = self._word_embedding(inputs=sampled_word, reuse=True)
-            context, alpha = self._attention_layer(features, features_proj, h, reuse=(t != 0))
-            alpha_list.append(alpha)
+            # if t == 0:
+            #     # x = self._word_embedding(inputs=tf.fill([tf.shape(features)[0]], self._start))
+            #     x = self._word_embedding(inputs=tf.fill([tf.shape(features)[0]], 0))
+            # else:
+            #     x = self._word_embedding(inputs=sampled_word, reuse=True)
+            # context, alpha = self._attention_layer(features, features_proj, h, reuse=(t != 0))
+            # alpha_list.append(alpha)
 
-            if self.selector:
-                context, beta = self._selector(context, h, reuse=(t != 0))
-                beta_list.append(beta)
+            # if self.selector:
+                # context, beta = self._selector(context, h, reuse=(t != 0))
+                # beta_list.append(beta)
 
-            with tf.variable_scope('lstm', reuse=(t != 0)):
-                _, (c, h) = lstm_cell(inputs=tf.concat([x, context], 1), state=[c, h])
+            # with tf.variable_scope('lstm', reuse=(t != 0)):
+                # _, (c, h) = lstm_cell(inputs=tf.concat([x, context], 1), state=[c, h])
 
-            logits = self._decode_lstm(x, h, context, reuse=(t != 0))
+            # logits = self._decode_lstm(x, h, context, reuse=(t != 0))
+            logits = self._get_cnn_layer(tf.cast(features, dtype=tf.int32))
             sampled_word = tf.argmax(logits, 1)
             sampled_word_list.append(sampled_word)
 
-        alphas = tf.transpose(tf.stack(alpha_list), (1, 0, 2))  # (N, T, L)
-        betas = tf.transpose(tf.squeeze(beta_list), (1, 0))  # (N, T)
+        # alphas = tf.transpose(tf.stack(alpha_list), (1, 0, 2))  # (N, T, L)
+        # betas = tf.transpose(tf.squeeze(beta_list), (1, 0))  # (N, T)
         sampled_labels = tf.transpose(tf.stack(sampled_word_list), (1, 0))  # (N, max_len)
         sampled_labels = tf.cast(sampled_labels, tf.int32)
-        return alphas, betas, sampled_labels
+        return sampled_labels
