@@ -16,7 +16,7 @@ import tensorflow as tf
 import numpy as np
 
 class CaptionGenerator(object):
-    def __init__(self, word_to_idx, dim_feature=97, dim_embed=512, dim_hidden=1024, n_time_step=16,
+    def __init__(self, word_to_idx, V, dim_feature=97, dim_embed=512, dim_hidden=1024, n_time_step=16,
                  prev2out=True, ctx2out=True, alpha_c=0.0, selector=True, dropout=True):
         """
         Args:
@@ -39,7 +39,7 @@ class CaptionGenerator(object):
         self.alpha_c = alpha_c
         self.selector = selector
         self.dropout = dropout
-        self.V = 2
+        self.V = V
         self.D = dim_feature
         self.M = dim_embed
         self.H = dim_hidden

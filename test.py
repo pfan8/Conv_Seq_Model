@@ -5,30 +5,32 @@ import numpy as np
 
 def main():
     # load train dataset
-    with open("/home/luban/cas/test_features.pkl","rb") as f:
+    with open("/nfs/private/cas/dataset_0_N/week/train_features.pkl","rb") as f:
+        train_features = pickle.load(f)
+    with open("/nfs/private/cas/dataset_0_N/week/train_labels.pkl","rb") as f:
+        train_labels = pickle.load(f)
+    with open("/nfs/private/cas/dataset_0_N/week/test_features.pkl","rb") as f:
         test_features = pickle.load(f)
-    with open("/home/luban/cas/test_labels.pkl","rb") as f:
+    with open("/nfs/private/cas/dataset_0_N/week/test_labels.pkl","rb") as f:
         test_labels = pickle.load(f)
-    # with open("/home/luban/cas/seq_lengths.p","rb") as f:
-    #     seq_lengths = pickle.load(f)
     word_to_idx = {"<START>":-3,"<END>":-2,"<NULL>":-1}
     dim_feature = test_features.shape[1]
     n_time_step = test_labels.shape[1] - 1
     print "n_time_step:%d"  % n_time_step
 
 
-    model = CaptionGenerator(word_to_idx, V=np.max(test_features)+1, dim_feature=dim_feature, dim_embed=128,
+    model = CaptionGenerator(word_to_idx, V=int(np.max(train_features)+1), dim_feature=dim_feature, dim_embed=128,
                                        dim_hidden=128, n_time_step=n_time_step, prev2out=True,
                                                  ctx2out=True, alpha_c=1.0, selector=True, dropout=True)
 
-    data = {"features":test_features, "labels":test_labels}
-    
-    solver = CaptioningSolver(model, data, data, n_epochs=50, batch_size=100, update_rule='adam',
-                                          learning_rate=0.001, print_every=500, save_every=1, image_path='./image/',
-                                    pretrained_model=None, model_path='./model/cnn/', test_model='./model/cnn/model-305',
+    data = {"features":train_features, "labels":train_labels}
+    val_data = {"features":test_features, "labels":test_labels}
+    solver = CaptioningSolver(model, data, val_data, n_epochs=50000, batch_size=100, update_rule='adam',
+                                          learning_rate=1e-4, print_every=100, save_every=10, image_path='./image/',
+                                    pretrained_model=None, model_path='./model/0_N/cnn/week/', test_model='./model/0_N/cnn/week/model-255',
                                      print_bleu=True, log_path='./log/')
 
-    solver.test(data, split='val')
+    solver.test(val_data, split='val', save_sampled_labels=True)
 
 
 if __name__ == "__main__":

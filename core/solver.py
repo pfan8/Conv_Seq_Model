@@ -215,8 +215,8 @@ class CaptioningSolver(object):
                 curr_loss = 0
 
                 # save model's parameters
-                if max_acc < curr_acc:
-                    max_acc= curr_acc
+                if max_acc < curr_test_acc:
+                    max_acc= curr_test_acc
                     saver.save(sess, os.path.join(self.model_path, 'model'), global_step=e + 1)
                     print "model of %.2f acc saved." % (max_acc)
 
@@ -242,43 +242,40 @@ class CaptioningSolver(object):
         n_examples = data['labels'].shape[0]
         n_iters_per_epoch = int(np.ceil(float(n_examples) / self.batch_size))
         # build a graph to sample labels
-        sampled_labels = self.model.build_sampler(max_len=7)  # (N, max_len, L), (N, max_len)
+        max_len = len(labels[0])
+        sampled_labels = self.model.build_sampler(max_len)  # (N, max_len, L)
+        tf.get_variable_scope().reuse_variables()
+        rank5_results = self.model.get_rank5_result(max_len)
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
+        # tf.get_variable_scope().reuse_variables()
         # loss, debug_var = self.model.build_model()
-        tf.get_variable_scope().reuse_variables()
         with tf.Session(config=config) as sess:
             tf.initialize_all_variables().run()
             saver = tf.train.Saver()
             saver.restore(sess, self.test_model)
 
-            all_gen_cap = np.ndarray((labels.shape[0], 7))
+            all_gen_cap = np.ndarray((labels.shape[0], max_len))
+            all_rank5_results = np.ndarray((labels.shape[0], max_len, 5))
             start_t = time.time()
             for i in range(n_iters_per_epoch):
                 features_batch = features[i * self.batch_size:(i + 1) * self.batch_size]
                 feed_dict = {self.model.features: features_batch}
                 gen_cap = sess.run(sampled_labels, feed_dict=feed_dict)
                 all_gen_cap[i * self.batch_size:(i + 1) * self.batch_size] = gen_cap
+                gen_r5_result = sess.run(rank5_results, feed_dict=feed_dict)
+                all_rank5_results[i * self.batch_size:(i + 1) * self.batch_size] = gen_r5_result
 
-            test_add_result = all_gen_cap + labels
-            TP = len(test_add_result[test_add_result == 2])
-            TN = len(test_add_result[test_add_result == 0])
             test_minus_result = all_gen_cap - labels
-            FP = len(test_minus_result[test_minus_result == 1])
-            FN = len(test_minus_result[test_minus_result == -1])
             n_labels = len(labels.flatten())
-            assert (TP+FP+TN+FN) == n_labels
-            acc = (TP + TN) / float(n_labels)
-            print "Acc: ", acc
-            print "True Positive: ", TP
-            print "False Positive: ", FP
-            print "True Negative: ", TN
-            print "False Negative: ", FN
-            recall = TP / float(TP + FN)
-            print "Recall:", recall
-            F1 = acc * recall * 2 / (acc + recall)
-            print "F1:", F1
+            acc = len(test_minus_result[test_minus_result == 0]) / float(n_labels)
+            num_equal_rank5 = np.equal(np.squeeze(all_rank5_results), labels)
+            acc_r5 = np.sum(num_equal_rank5) / float(n_labels)
+            diff = np.sum(np.abs(test_minus_result)) / float(n_labels)
+            print "Acc(rank@1): ", acc
+            print "Acc(rank@5): ", acc_r5
+            print "Diff: ", diff
             print "Elapsed time: ", time.time() - start_t
             if save_sampled_labels:
                 save_pickle(all_gen_cap, "./data/baseline/sample_labels.pkl")

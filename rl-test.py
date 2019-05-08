@@ -5,9 +5,9 @@ import numpy as np
 
 def main():
    # load train dataset
-    with open("/home/luban/cas/test_features.pkl","rb") as f:
+    with open("/nfs/private/cas/test_features.pkl","rb") as f:
         test_features = pickle.load(f)
-    with open("/home/luban/cas/test_labels.pkl","rb") as f:
+    with open("/nfs/private/cas/test_labels.pkl","rb") as f:
         test_labels = pickle.load(f)
     with open("./data/baseline/sample_labels.pkl","rb") as f:
         sample_labels = pickle.load(f)

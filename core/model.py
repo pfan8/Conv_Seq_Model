@@ -16,6 +16,7 @@ from utils import conv2d
 import tensorflow as tf
 import numpy as np
 import pdb
+import tensorflow_probability as tfp
 
 class CaptionGenerator(object):
     def __init__(self, word_to_idx, V, dim_feature=97, dim_embed=512, dim_hidden=1024, n_time_step=16,
@@ -232,11 +233,17 @@ class CaptionGenerator(object):
             # # Calculate loss
         logits = self._get_cnn_layer(tf.cast(features, dtype=tf.int32))
         x1 = tf.nn.softmax(logits)
-        one_hot_result = tf.one_hot(labels_out[:, 0], self.V) # (N, V)
+        # one_hot_result = tf.one_hot(labels_out[:, 0], self.V) # (N, V)
 
+        tfd = tfp.distributions
+        label_scale = tf.fill([batch_size], 0.5)
+        dist = tfd.Normal(loc=tf.cast(labels_out[:,0], dtype=tf.float32), scale= label_scale)
+        for i in range(self.V):
+            probs = tf.fill([batch_size], float(i))
+            gauss_result = dist.prob(probs)
             # weight = tf.constant([1.0,1.0])
-        softmax_results = tf.reduce_mean(-tf.reduce_sum(one_hot_result * tf.log(x1), 1))
-        loss += softmax_results
+            softmax_results = tf.reduce_mean(-tf.reduce_sum(gauss_result * tf.log(x1[:,i])))
+            loss += softmax_results
         # self.debug_var = (x1,softmax_results,loss)
         # if self.alpha_c > 0:
         #     alphas = tf.transpose(tf.stack(alpha_list), (1, 0, 2))  # (N, T, D)
@@ -247,7 +254,7 @@ class CaptionGenerator(object):
         # return loss / tf.to_float(batch_size), self.debug_var
         return loss / tf.to_float(batch_size)
 
-    def build_sampler(self, max_len=30):
+    def build_sampler(self, max_len=7):
         features = self.features
 
         # batch normalize feature vectors
@@ -257,8 +264,8 @@ class CaptionGenerator(object):
         # features_proj = self._project_features(features=features)
 
         sampled_word_list = []
-        alpha_list = []
-        beta_list = []
+        # alpha_list = []
+        # beta_list = []
         # lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=self.H)
 
         for t in range(max_len):
@@ -287,3 +294,16 @@ class CaptionGenerator(object):
         sampled_labels = tf.transpose(tf.stack(sampled_word_list), (1, 0))  # (N, max_len)
         sampled_labels = tf.cast(sampled_labels, tf.int32)
         return sampled_labels
+
+    def get_rank5_result(self, max_len=7):
+        features = self.features
+        results_list = []
+
+        for i in range(max_len):
+            logits = self._get_cnn_layer(tf.cast(features, dtype=tf.int32))
+            _, logits_top_k = tf.nn.top_k(logits, 5)
+            results_list.append(logits_top_k)
+
+        results_list = tf.transpose(tf.stack(results_list), (1, 0, 2))  # (N, max_len, 5)
+        return results_list
+
